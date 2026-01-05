@@ -1,13 +1,12 @@
 {
   "name": "motorwatch",
   "version": "1.0.0",
-  "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "node-fetch": "^3.3.2"
   }
 }
