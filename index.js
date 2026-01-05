@@ -52,7 +52,7 @@ async function sendWebhook(player) {
       body: JSON.stringify({
         embeds: [{
           title: "🆕 New Player Detected",
-          description: `**${player.nickname}** just appeared in the API.`,
+          description: `**${player.nickname}** just joined the game.`,
           color: 0x00ff99,
           timestamp: new Date().toISOString()
         }]
