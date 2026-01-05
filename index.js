@@ -1,36 +1,61 @@
-import express from "express";
-import { Client, GatewayIntentBits } from "discord.js";
+import fetch from "node-fetch";
+import fs from "fs";
 
-const app = express();
-const port = process.env.PORT || 3000;
+const API_URL = process.env.API_URL;
+const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
-// Simple route to keep Railway happy
-app.get("/", (req, res) => {
-  res.send("Bot is running!");
-});
+const STATE_FILE = "./seenPlayers.json";
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`Express server listening on port ${port}`);
-});
+// Load seen players (persist across restarts)
+let seenPlayers = new Set();
 
-// Discord bot setup
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+if (fs.existsSync(STATE_FILE)) {
+  const data = JSON.parse(fs.readFileSync(STATE_FILE));
+  seenPlayers = new Set(data);
+}
 
-client.on("ready", () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-});
+async function fetchPlayers() {
+  const res = await fetch(API_URL);
+  return res.json();
+}
 
-client.on("messageCreate", async (message) => {
-  if (message.content === "!fetch") {
-    // Step 1: send an initial reply
-    await message.reply("Fetching data...");
+async function sendWebhook(player) {
+  await fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [{
+        title: "🆕 New Player Detected",
+        description: `**${player.name}** just appeared in the API.`,
+        color: 0x00ff99,
+        timestamp: new Date().toISOString()
+      }]
+    })
+  });
+}
 
-    // Step 2: wait 10 seconds
-    setTimeout(async () => {
-      // Step 3: send the data reply
-      await message.channel.send("Here is your data! 📊");
-    }, 10000);
+async function checkForNewPlayers() {
+  try {
+    const players = await fetchPlayers();
+
+    for (const player of players) {
+      const id = player.id ?? player.name;
+
+      if (!seenPlayers.has(id)) {
+        seenPlayers.add(id);
+        await sendWebhook(player);
+      }
+    }
+
+    // Persist state
+    fs.writeFileSync(STATE_FILE, JSON.stringify([...seenPlayers]));
+  } catch (err) {
+    console.error("Error checking players:", err.message);
   }
-});
+}
 
-client.login("YOUR_BOT_TOKEN");
+// Check every 60 seconds
+setInterval(checkForNewPlayers, 60 * 1000);
+
+// Run immediately on startup
+checkForNewPlayers();
