@@ -1,25 +1,12 @@
 import fetch from "node-fetch";
-import fs from "fs";
 
 const API_URL = process.env.API_URL;
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
-const STATE_FILE = "./seenPlayers.json";
 
 // Check env variables
 if (!API_URL || !WEBHOOK_URL) {
   console.error("❌ Missing API_URL or DISCORD_WEBHOOK_URL environment variable!");
   process.exit(1);
-}
-
-// Load seen players (persist across restarts)
-let seenPlayers = new Set();
-if (fs.existsSync(STATE_FILE)) {
-  try {
-    const data = JSON.parse(fs.readFileSync(STATE_FILE));
-    seenPlayers = new Set(data);
-  } catch (err) {
-    console.warn("⚠ Could not read state file, starting fresh:", err.message);
-  }
 }
 
 // Fetch players from API
@@ -51,8 +38,8 @@ async function sendWebhook(player) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         embeds: [{
-          title: "🆕 New Player Detected",
-          description: `**${player.nickname}** just joined the game.`,
+          title: "🆕 Player Detected",
+          description: `**${player.nickname}** is currently in the game.`,
           color: 0x00ff99,
           timestamp: new Date().toISOString()
         }]
@@ -64,29 +51,17 @@ async function sendWebhook(player) {
   }
 }
 
-// Check for new players
-async function checkForNewPlayers() {
+// Check players and send webhooks
+async function checkPlayers() {
   const players = await fetchPlayers();
 
   for (const player of players) {
-    const id = player.nickname; // Use nickname as unique identifier
-
-    if (!seenPlayers.has(id)) {
-      seenPlayers.add(id);
-      await sendWebhook(player);
-    }
-  }
-
-  // Persist state
-  try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify([...seenPlayers]));
-  } catch (err) {
-    console.error("❌ Error saving state:", err.message);
+    await sendWebhook(player);
   }
 }
 
 // Run every 60 seconds
-setInterval(checkForNewPlayers, 60 * 1000);
+setInterval(checkPlayers, 60 * 1000);
 
 // Run immediately on startup
-checkForNewPlayers();
+checkPlayers();
