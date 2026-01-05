@@ -28,12 +28,15 @@ async function fetchPlayers() {
     const res = await fetch(API_URL);
     const data = await res.json();
 
-    if (!Array.isArray(data)) {
+    // Convert object to array if necessary
+    const playersArray = Array.isArray(data) ? data : Object.values(data);
+
+    if (!Array.isArray(playersArray)) {
       console.error("❌ API did not return an array of players:", data);
       return [];
     }
 
-    return data;
+    return playersArray;
   } catch (err) {
     console.error("❌ Error fetching players:", err.message);
     return [];
