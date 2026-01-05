@@ -66,7 +66,7 @@ async function checkForNewPlayers() {
   const players = await fetchPlayers();
 
   for (const player of players) {
-    const id = player.id ?? player.nickname;
+    const id = player.nickname; // Use nickname as unique identifier
 
     if (!seenPlayers.has(id)) {
       seenPlayers.add(id);
