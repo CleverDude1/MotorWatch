@@ -1,79 +1,81 @@
-import express from "express";
+import http from "http";
 import nacl from "tweetnacl";
 
-const app = express();
-app.use(express.raw({ type: "*/*" }));
+/* ========= CONFIG ========= */
+const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 
-/* ================= CONFIG ================= */
-const API_URL = process.env.LIGHT_API_URL;
-const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
+/* ========= SERVER ========= */
+const server = http.createServer(async (req, res) => {
+  // ---- Allow GET (health check) ----
+  if (req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("MotorWatch bot is online");
+    return;
+  }
 
-/* ================= ROUTE ================= */
-app.post("/", async (req, res) => {
+  // ---- Only POST beyond this point ----
+  if (req.method !== "POST") {
+    res.writeHead(405);
+    res.end("Method Not Allowed");
+    return;
+  }
+
+  let body = "";
+  for await (const chunk of req) {
+    body += chunk;
+  }
+
   const signature = req.headers["x-signature-ed25519"];
   const timestamp = req.headers["x-signature-timestamp"];
 
   if (!signature || !timestamp) {
-    return res.status(401).send("Missing signature");
+    res.writeHead(401);
+    res.end("Missing signature");
+    return;
   }
 
   const isValid = nacl.sign.detached.verify(
-    new Uint8Array([
-      ...new TextEncoder().encode(timestamp),
-      ...req.body,
+    Buffer.concat([
+      Buffer.from(timestamp),
+      Buffer.from(body),
     ]),
-    hexToUint8(signature),
-    hexToUint8(PUBLIC_KEY)
+    Buffer.from(signature, "hex"),
+    Buffer.from(DISCORD_PUBLIC_KEY, "hex")
   );
 
   if (!isValid) {
-    return res.status(401).send("Invalid signature");
+    res.writeHead(401);
+    res.end("Invalid signature");
+    return;
   }
 
-  const interaction = JSON.parse(req.body.toString());
+  const interaction = JSON.parse(body);
 
-  /* -------- Discord Ping -------- */
+  // ---- Discord PING ----
   if (interaction.type === 1) {
-    return res.json({ type: 1 });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ type: 1 }));
+    return;
   }
 
-  /* -------- Slash Command -------- */
+  // ---- Slash command response ----
   if (interaction.type === 2) {
-    // ✅ IMMEDIATE RESPONSE
-    res.json({
-      type: 5 // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
-    });
-
-    // ⏳ Continue async work (Discord already satisfied)
-    try {
-      const response = await fetch(API_URL);
-      const players = await response.json();
-
-      const content =
-        players.length === 0
-          ? "😴 No players online."
-          : "🎮 **Players Online:**\n" +
-            players.map(p => p.nickname).join("\n");
-
-      await fetch(
-        `https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content })
-        }
-      );
-    } catch (e) {
-      console.error(e);
-    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      type: 4,
+      data: {
+        content: "✅ MotorWatch is responding correctly!"
+      }
+    }));
+    return;
   }
+
+  res.writeHead(400);
+  res.end("Unhandled interaction");
 });
 
-/* ================= START ================= */
+/* ========= START ========= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Bot online"));
-
-/* ================= HELPERS ================= */
-function hexToUint8(hex) {
-  return new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-}
+server.listen(PORT, () => {
+  console.log(`MotorWatch running on port ${PORT}`);
+});
