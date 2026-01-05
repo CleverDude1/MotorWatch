@@ -8,6 +8,7 @@
   "dependencies": {
     "express": "^5.2.1",
     "node-fetch": "^3.3.2",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "discord.js": "^14.14.0"
   }
 }
