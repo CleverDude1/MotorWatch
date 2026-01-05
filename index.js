@@ -1,81 +1,113 @@
-import http from "http";
 import nacl from "tweetnacl";
 
-/* ========= CONFIG ========= */
-const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
+/* ================= CONFIG ================= */
+const API_URL = "https://mainserver.serv00.net/DiscordbotAPI/API.php"; // Light API URL
+const RECENT_THRESHOLD_DAYS = 7;
 
-/* ========= SERVER ========= */
-const server = http.createServer(async (req, res) => {
-  // ---- Allow GET (health check) ----
-  if (req.method === "GET") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("MotorWatch bot is online");
-    return;
-  }
+/* =============== MAIN HANDLER ============== */
+export default {
+  async fetch(request, env) {
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
 
-  // ---- Only POST beyond this point ----
-  if (req.method !== "POST") {
-    res.writeHead(405);
-    res.end("Method Not Allowed");
-    return;
-  }
+    // ----- Discord signature headers -----
+    const signature = request.headers.get("X-Signature-Ed25519");
+    const timestamp = request.headers.get("X-Signature-Timestamp");
 
-  let body = "";
-  for await (const chunk of req) {
-    body += chunk;
-  }
+    if (!signature || !timestamp) {
+      return new Response("Missing signature", { status: 401 });
+    }
 
-  const signature = req.headers["x-signature-ed25519"];
-  const timestamp = req.headers["x-signature-timestamp"];
+    const body = await request.clone().arrayBuffer();
 
-  if (!signature || !timestamp) {
-    res.writeHead(401);
-    res.end("Missing signature");
-    return;
-  }
+    // ----- Verify Discord request -----
+    const isValid = nacl.sign.detached.verify(
+      new Uint8Array([
+        ...new TextEncoder().encode(timestamp),
+        ...new Uint8Array(body),
+      ]),
+      hexToUint8(signature),
+      hexToUint8(env.DISCORD_PUBLIC_KEY)
+    );
 
-  const isValid = nacl.sign.detached.verify(
-    Buffer.concat([
-      Buffer.from(timestamp),
-      Buffer.from(body),
-    ]),
-    Buffer.from(signature, "hex"),
-    Buffer.from(DISCORD_PUBLIC_KEY, "hex")
-  );
+    if (!isValid) {
+      return new Response("Invalid signature", { status: 401 });
+    }
 
-  if (!isValid) {
-    res.writeHead(401);
-    res.end("Invalid signature");
-    return;
-  }
+    const interaction = JSON.parse(new TextDecoder().decode(body));
 
-  const interaction = JSON.parse(body);
+    /* ---------- Discord PING ---------- */
+    if (interaction.type === 1) {
+      return json({ type: 1 });
+    }
 
-  // ---- Discord PING ----
-  if (interaction.type === 1) {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ type: 1 }));
-    return;
-  }
+    /* ---------- Slash Commands ---------- */
+    if (interaction.type === 2) {
+      const command = interaction.data.name.toLowerCase();
 
-  // ---- Slash command response ----
-  if (interaction.type === 2) {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      type: 4,
-      data: {
-        content: "✅ MotorWatch is responding correctly!"
+      // Fetch players from light API
+      const players = await fetchPlayerData();
+      if (!players) return reply("❌ Unable to fetch player data.");
+
+      const now = new Date();
+
+      if (command === "online") {
+        if (players.length === 0) return reply("😴 No players online right now.");
+
+        const content = `🎮 **${players.length} players online:**\n` +
+          players.map(p => p.nickname || "Unknown").join("\n");
+
+        return reply(content);
       }
-    }));
-    return;
+
+      if (command === "recent") {
+        // Filter for players who logged in the last 7 days
+        const recent = players.filter(p => {
+          if (!p.last_login || p.last_login === "0000-00-00 00:00:00") return false;
+          const last = new Date(p.last_login.replace(" ", "T") + "Z");
+          return (now - last) / 86400000 <= RECENT_THRESHOLD_DAYS;
+        });
+
+        if (recent.length === 0) return reply("😴 No players played in the last 7 days.");
+
+        const content = `🕒 **Recent Players (last 7 days):**\n` +
+          recent.map(p => `${p.nickname} (${p.last_login})`).join("\n");
+
+        return reply(content);
+      }
+
+      return reply("❓ Unknown command.");
+    }
+
+    return new Response("Unhandled interaction", { status: 400 });
+  },
+};
+
+/* ================= HELPERS ================= */
+
+async function fetchPlayerData() {
+  try {
+    const res = await fetch(API_URL);
+    return await res.json();
+  } catch {
+    return null;
   }
+}
 
-  res.writeHead(400);
-  res.end("Unhandled interaction");
-});
+function reply(content) {
+  return json({
+    type: 4,
+    data: { content },
+  });
+}
 
-/* ========= START ========= */
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`MotorWatch running on port ${PORT}`);
-});
+function json(data) {
+  return new Response(JSON.stringify(data), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function hexToUint8(hex) {
+  return new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+}
