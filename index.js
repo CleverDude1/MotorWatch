@@ -1,8 +1,7 @@
 import nacl from "tweetnacl";
 
 /* ================= CONFIG ================= */
-const API_URL = "https://mainserver.serv00.net/DiscordbotAPI/API.php"; // Light API URL
-const RECENT_THRESHOLD_DAYS = 7;
+const API_URL = "https://mainserver.serv00.net/DiscordbotAPI/API.php"; // Your light API URL
 
 /* =============== MAIN HANDLER ============== */
 export default {
@@ -46,38 +45,59 @@ export default {
     if (interaction.type === 2) {
       const command = interaction.data.name.toLowerCase();
 
-      // Fetch players from light API
-      const players = await fetchPlayerData();
-      if (!players) return reply("❌ Unable to fetch player data.");
+      // Immediately defer the reply to avoid timeout
+      const deferredResponse = json({ type: 5 }); // DEFERRED_RESPONSE
+      // Send this first
+      setTimeout(async () => {
+        try {
+          const players = await fetchPlayerData();
+          let content;
 
-      const now = new Date();
+          if (!players) {
+            content = "❌ Unable to fetch online players.";
+          } else if (players.length === 0) {
+            content = "😴 No players online right now.";
+          } else {
+            if (command === "online") {
+              content =
+                `🎮 **${players.length} players online:**\n` +
+                players.map((p) => p.nickname || "Unknown").join("\n");
+            } else if (command === "recent") {
+              // Filter last 7 days
+              const now = Date.now();
+              const recent = players.filter((p) => {
+                if (!p.last_login) return false;
+                const lastTime = Date.parse(p.last_login);
+                return !isNaN(lastTime) && now - lastTime <= 7 * 24 * 60 * 60 * 1000;
+              });
 
-      if (command === "online") {
-        if (players.length === 0) return reply("😴 No players online right now.");
+              if (recent.length === 0) {
+                content = "😴 No players played in the last 7 days.";
+              } else {
+                content =
+                  `🕒 **Recent Players (last 7 days)**\n` +
+                  recent
+                    .slice(0, 10)
+                    .map((p) => `${p.nickname || "Unknown"} (${p.last_login})`)
+                    .join("\n");
+              }
+            } else {
+              content = "❓ Unknown command.";
+            }
+          }
 
-        const content = `🎮 **${players.length} players online:**\n` +
-          players.map(p => p.nickname || "Unknown").join("\n");
+          // Send the actual message
+          await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content }),
+          });
+        } catch (err) {
+          console.error("Failed to send follow-up message:", err);
+        }
+      }, 0);
 
-        return reply(content);
-      }
-
-      if (command === "recent") {
-        // Filter for players who logged in the last 7 days
-        const recent = players.filter(p => {
-          if (!p.last_login || p.last_login === "0000-00-00 00:00:00") return false;
-          const last = new Date(p.last_login.replace(" ", "T") + "Z");
-          return (now - last) / 86400000 <= RECENT_THRESHOLD_DAYS;
-        });
-
-        if (recent.length === 0) return reply("😴 No players played in the last 7 days.");
-
-        const content = `🕒 **Recent Players (last 7 days):**\n` +
-          recent.map(p => `${p.nickname} (${p.last_login})`).join("\n");
-
-        return reply(content);
-      }
-
-      return reply("❓ Unknown command.");
+      return deferredResponse;
     }
 
     return new Response("Unhandled interaction", { status: 400 });
@@ -85,7 +105,6 @@ export default {
 };
 
 /* ================= HELPERS ================= */
-
 async function fetchPlayerData() {
   try {
     const res = await fetch(API_URL);
@@ -95,13 +114,6 @@ async function fetchPlayerData() {
   }
 }
 
-function reply(content) {
-  return json({
-    type: 4,
-    data: { content },
-  });
-}
-
 function json(data) {
   return new Response(JSON.stringify(data), {
     headers: { "Content-Type": "application/json" },
@@ -109,5 +121,5 @@ function json(data) {
 }
 
 function hexToUint8(hex) {
-  return new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+  return new Uint8Array(hex.match(/.{1,2}/g).map((b) => parseInt(b, 16)));
 }
