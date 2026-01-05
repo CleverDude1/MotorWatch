@@ -6,7 +6,10 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "tweetnacl": "^1.0.3",
-    "node-fetch": "^3.3.2"
-  }
+  "tweetnacl": "^1.0.3",
+  "node-fetch": "^3.3.2",
+  "express": "^4.18.2",
+  "discord.js": "^14.14.0"
+}
+
 }
