@@ -3,34 +3,34 @@ import fetch from "node-fetch";
 const API_URL = process.env.API_URL;
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
-// Check env variables
 if (!API_URL || !WEBHOOK_URL) {
   console.error("❌ Missing API_URL or DISCORD_WEBHOOK_URL environment variable!");
   process.exit(1);
 }
 
-// Fetch players from API
+// Store already announced players (prevents spam)
+const announcedPlayers = new Set();
+
+// Fetch online users from your new API structure
 async function fetchPlayers() {
   try {
     const res = await fetch(API_URL);
     const data = await res.json();
 
-    // Convert object to array if necessary
-    const playersArray = Array.isArray(data) ? data : Object.values(data);
-
-    if (!Array.isArray(playersArray)) {
-      console.error("❌ API did not return an array of players:", data);
+    if (!data.success || !Array.isArray(data.users)) {
+      console.error("❌ Invalid API response:", data);
       return [];
     }
 
-    return playersArray;
+    return data.users;
+
   } catch (err) {
     console.error("❌ Error fetching players:", err.message);
     return [];
   }
 }
 
-// Send message to Discord webhook
+// Send Discord webhook
 async function sendWebhook(player) {
   try {
     await fetch(WEBHOOK_URL, {
@@ -38,30 +38,41 @@ async function sendWebhook(player) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         embeds: [{
-          title: "🆕 Player Detected",
-          description: `**${player.nickname}** is currently in the game.`,
+          title: "🟢 Player Online",
+          description: `**${player.display_name}** joined the game.`,
+          fields: [
+            { name: "User ID", value: String(player.id), inline: true },
+            { name: "Last Login", value: player.last_login, inline: true }
+          ],
           color: 0x00ff99,
           timestamp: new Date().toISOString()
         }]
       })
     });
-    console.log(`✅ Sent webhook for player: ${player.nickname}`);
+
+    console.log(`✅ Sent webhook for ${player.display_name}`);
+
   } catch (err) {
     console.error("❌ Error sending webhook:", err.message);
   }
 }
 
-// Check players and send webhooks
+// Main check loop
 async function checkPlayers() {
   const players = await fetchPlayers();
 
   for (const player of players) {
-    await sendWebhook(player);
+
+    // Only send if not already announced
+    if (!announcedPlayers.has(player.id)) {
+      await sendWebhook(player);
+      announcedPlayers.add(player.id);
+    }
   }
 }
 
 // Run every 60 seconds
 setInterval(checkPlayers, 60 * 1000);
 
-// Run immediately on startup
+// Run immediately
 checkPlayers();
