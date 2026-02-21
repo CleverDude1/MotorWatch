@@ -8,6 +8,9 @@ if (!API_URL || !WEBHOOK_URL) {
   process.exit(1);
 }
 
+// Track players currently considered "online"
+let currentOnline = new Set();
+
 // Fetch online users from your API
 async function fetchPlayers() {
   try {
@@ -58,9 +61,17 @@ async function sendWebhook(player) {
 async function checkPlayers() {
   const players = await fetchPlayers();
 
+  const newOnline = new Set(players.map(p => p.id));
+
+  // Detect players who just appeared
   for (const player of players) {
-    await sendWebhook(player);
+    if (!currentOnline.has(player.id)) {
+      await sendWebhook(player);
+    }
   }
+
+  // Update current online set
+  currentOnline = newOnline;
 }
 
 // Run every 60 seconds
