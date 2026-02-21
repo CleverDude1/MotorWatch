@@ -8,10 +8,7 @@ if (!API_URL || !WEBHOOK_URL) {
   process.exit(1);
 }
 
-// Store already announced players (prevents spam)
-const announcedPlayers = new Set();
-
-// Fetch online users from your new API structure
+// Fetch online users from your API
 async function fetchPlayers() {
   try {
     const res = await fetch(API_URL);
@@ -39,7 +36,7 @@ async function sendWebhook(player) {
       body: JSON.stringify({
         embeds: [{
           title: "🟢 Player Online",
-          description: `**${player.display_name}** joined the game.`,
+          description: `**${player.display_name}** is active in the last 10 minutes.`,
           fields: [
             { name: "User ID", value: String(player.id), inline: true },
             { name: "Last Login", value: player.last_login, inline: true }
@@ -62,12 +59,7 @@ async function checkPlayers() {
   const players = await fetchPlayers();
 
   for (const player of players) {
-
-    // Only send if not already announced
-    if (!announcedPlayers.has(player.id)) {
-      await sendWebhook(player);
-      announcedPlayers.add(player.id);
-    }
+    await sendWebhook(player);
   }
 }
 
